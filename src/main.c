@@ -50,15 +50,18 @@ void vdrawFigures(void *pvParameters)
     // backend.
     tumDrawBindThread();
 
+    //define center of screen
     signed short center_x = SCREEN_WIDTH/2;
     signed short center_y = SCREEN_HEIGHT/2;
 
-    //coordinate definition for circle
+    //initial coordinate definition for circle
     signed short circle_x = center_x - 100;
     signed short circle_y = center_y;
    	signed short circle_radius = 20;
+    //angle for circle rotation
+    unsigned short circle_angle = 180;
 
-    //coordinate definition for triangle 
+    //initial coordinate definition for triangle 
     coord_t upper_t;
     coord_t lower_l_t;
     coord_t lower_r_t;
@@ -76,8 +79,11 @@ void vdrawFigures(void *pvParameters)
     coord_triangle[0] = upper_t;
     coord_triangle[1] = lower_l_t;
     coord_triangle[2] = lower_r_t;
+    //Angle for triangle rotation
+    unsigned short triangle_angle = 0;
 
-    //coordinate definition for Square
+
+    //initial coordinate definition for Square
     signed short box_x = center_x + 100 - 20;
     signed short box_y = center_y - 20;
     signed short box_width = 40;
@@ -92,21 +98,28 @@ void vdrawFigures(void *pvParameters)
         // resource and given back when you're finished. If the mutex is not
         // given back then no other task can access the reseource.
         if (xSemaphoreTake(buttons.lock, 0) == pdTRUE) {
-            if (buttons.buttons[KEYCODE(Q)]) { 
+            if (buttons.buttons[KEYCODE(Q
+                            )]) { 
                 // Equiv to SDL_SCANCODE_Q
                 exit(EXIT_SUCCESS);
             }
             xSemaphoreGive(buttons.lock);
         }
+        
 
         tumDrawClear(White); // Clear screen
 
         tumDrawCircle(circle_x,circle_y,circle_radius,TUMBlue); // Draw Circle
         tumDrawTriangle(coord_triangle, Red);
         tumDrawFilledBox(box_x, box_y, box_width, box_height, Green);
-
-        tumDrawUpdateScreen(); // Refresh the screen to draw string
-
+        /*
+        //update coordinates of circle
+        circle_angle++;
+        circle_x = circle_x + 100*cos(circle_angle);
+        circle_y = circle_y + 100*sin(circle_angle);
+        */
+        tumDrawUpdateScreen(); // Refresh the screen
+        
         // Basic sleep of 1000 milliseconds
         vTaskDelay((TickType_t)100);
     }
