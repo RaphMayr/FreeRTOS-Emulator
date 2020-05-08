@@ -79,15 +79,15 @@ void vdrawFigures(void *pvParameters)
     coord_triangle[0] = upper_t;
     coord_triangle[1] = lower_l_t;
     coord_triangle[2] = lower_r_t;
-    //Angle for triangle rotation
-    unsigned short triangle_angle = 0;
-
 
     //initial coordinate definition for Square
     signed short box_x = center_x + 100 - 20;
     signed short box_y = center_y - 20;
     signed short box_width = 40;
     signed short box_height = 40;
+
+    //Angle for square rotation
+    unsigned short square_angle = 0;
 
     while (1) {
         tumEventFetchEvents(); // Query events backend for new events, ie. button presses
@@ -109,19 +109,28 @@ void vdrawFigures(void *pvParameters)
 
         tumDrawClear(White); // Clear screen
 
-        tumDrawCircle(circle_x,circle_y,circle_radius,TUMBlue); // Draw Circle
+        //draw Triangle in Center
         tumDrawTriangle(coord_triangle, Red);
-        tumDrawFilledBox(box_x, box_y, box_width, box_height, Green);
-        /*
+
         //update coordinates of circle
-        circle_angle++;
-        circle_x = circle_x + 100*cos(circle_angle);
-        circle_y = circle_y + 100*sin(circle_angle);
-        */
+        circle_angle--;
+        circle_x = center_x + 100*cos(circle_angle);
+        circle_y = center_y + 100*sin(circle_angle);
+
+        tumDrawCircle(circle_x,circle_y,circle_radius,TUMBlue); // Draw Circle
+        
+        //update coordiantes of Square
+        square_angle++;
+        box_x = center_x - 20 + 100*cos(square_angle);
+        box_y = center_y + 100*sin(square_angle);
+
+        tumDrawFilledBox(box_x, box_y, box_width, box_height, Green);
+        
         tumDrawUpdateScreen(); // Refresh the screen
         
         // Basic sleep of 1000 milliseconds
-        vTaskDelay((TickType_t)100);
+        vTaskDelay(
+            (TickType_t)100);
     }
 }
 
