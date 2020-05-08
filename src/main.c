@@ -44,10 +44,22 @@ void xGetButtonInput(void)
 
 void vDemoTask(void *pvParameters)
 {
-    // structure to store time retrieved from Linux kernel
-    static struct timespec the_time;
-    static char our_time_string[100];
-    static int our_time_strings_width = 0;
+    unsigned short A_count = 0;
+    unsigned short B_count = 0;
+    unsigned short C_count = 0;
+    unsigned short D_count = 0;
+
+    static char A_string[50];
+    static int A_string_width = 0;
+
+    static char B_string[50];
+    static int B_string_width = 0;
+
+    static char C_string[50];
+    static int C_string_width = 0;
+
+    static char D_string[50];
+    static int D_string_width = 0;
 
     // Needed such that Gfx library knows which thread controlls drawing
     // Only one thread can call tumDrawUpdateScreen while and thread can call
@@ -64,37 +76,69 @@ void vDemoTask(void *pvParameters)
         // resource and given back when you're finished. If the mutex is not
         // given back then no other task can access the reseource.
         if (xSemaphoreTake(buttons.lock, 0) == pdTRUE) {
-            if (buttons.buttons[KEYCODE(
-                                    Q)]) { // Equiv to SDL_SCANCODE_Q
+            if (buttons.buttons[KEYCODE(Q)]) { // Equiv to SDL_SCANCODE_Q
                 exit(EXIT_SUCCESS);
+            }
+            if (buttons.buttons[KEYCODE(A)]){
+                A_count++;
+            }
+            if (buttons.buttons[KEYCODE(B)]){
+                B_count++;
+            }
+            if (buttons.buttons[KEYCODE(C)]){
+                C_count++;
+            }
+            if (buttons.buttons[KEYCODE(D)]){
+                D_count++;
             }
         }
         xSemaphoreGive(buttons.lock);
 
         tumDrawClear(White); // Clear screen
 
-        clock_gettime(CLOCK_REALTIME,
-                      &the_time); // Get kernel real time
+        //format strings
+        sprintf(A_string, "A was pressed %i times.", A_count);
+        sprintf(B_string, "B was pressed %i times.", B_count);
+        sprintf(C_string, "C was pressed %i times.", C_count);
+        sprintf(D_string, "D was pressed %i times.", D_count);
 
-        // Format our string into our char array
-        sprintf(our_time_string,
-                "There has been %ld seconds since the Epoch. Press Q to quit",
-                (long int)the_time.tv_sec);
-
-        // Get the width of the string on the screen so we can center it
-        // Returns 0 if width was successfully obtained
-        if (!tumGetTextSize((char *)our_time_string,
-                            &our_time_strings_width, NULL))
-            tumDrawText(our_time_string,
+        if (!tumGetTextSize((char *)A_string,
+                            &A_string_width, NULL))
+            tumDrawText(A_string,
                         SCREEN_WIDTH / 2 -
-                        our_time_strings_width / 2,
-                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2,
+                        A_string_width / 2,
+                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 - 150,
                         TUMBlue);
+        
+        if (!tumGetTextSize((char *)B_string,
+                            &B_string_width, NULL))
+            tumDrawText(B_string,
+                        SCREEN_WIDTH / 2 -
+                        B_string_width / 2,
+                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 - 50,
+                        TUMBlue);
+        
+        if (!tumGetTextSize((char *)C_string,
+                            &C_string_width, NULL))
+            tumDrawText(C_string,
+                        SCREEN_WIDTH / 2 -
+                        C_string_width / 2,
+                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 50,
+                        TUMBlue);
+        
+        if (!tumGetTextSize((char *)D_string,
+                            &D_string_width, NULL))
+            tumDrawText(D_string,
+                        SCREEN_WIDTH / 2 -
+                        D_string_width / 2,
+                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 150,
+                        TUMBlue);
+
 
         tumDrawUpdateScreen(); // Refresh the screen to draw string
 
         // Basic sleep of 1000 milliseconds
-        vTaskDelay((TickType_t)1000);
+        vTaskDelay((TickType_t)100);
     }
 }
 
