@@ -61,6 +61,9 @@ void vDemoTask(void *pvParameters)
     static char D_string[50];
     static int D_string_width = 0;
 
+    static char End_string[100];
+    static int End_string_width = 0;
+
     // Needed such that Gfx library knows which thread controlls drawing
     // Only one thread can call tumDrawUpdateScreen while and thread can call
     // the drawing functions to draw objects. This is a limitation of the SDL
@@ -101,6 +104,7 @@ void vDemoTask(void *pvParameters)
         sprintf(B_string, "B was pressed %i times.", B_count);
         sprintf(C_string, "C was pressed %i times.", C_count);
         sprintf(D_string, "D was pressed %i times.", D_count);
+        sprintf(End_string, "press (q) to end program.");
 
         if (!tumGetTextSize((char *)A_string,
                             &A_string_width, NULL))
@@ -134,11 +138,19 @@ void vDemoTask(void *pvParameters)
                         SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 150,
                         TUMBlue);
 
+        if (!tumGetTextSize((char *)A_string,
+                            &End_string_width, NULL))
+            tumDrawText(End_string,
+                        SCREEN_WIDTH / 2 -
+                        End_string_width / 2,
+                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 200,
+                        TUMBlue);
+
 
         tumDrawUpdateScreen(); // Refresh the screen to draw string
 
         // Basic sleep of 1000 milliseconds
-        vTaskDelay((TickType_t)100);
+        vTaskDelay((TickType_t)50);
     }
 }
 
