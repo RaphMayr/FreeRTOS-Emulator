@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <inttypes.h>
+#include <stdbool.h>
 
 #include <SDL2/SDL_scancode.h>
 
@@ -89,9 +90,26 @@ void vdrawFigures(void *pvParameters)
     //Angle for square rotation
     unsigned short square_angle = 0;
 
+    //LOWER TEXT
     //structure to store lower text
-    static char random_string[100];
-    static int random_strings_width = 0;
+    static char lower_string[100];
+    static int lower_strings_width = 0;
+
+    //UPPER TEXT
+    //structure to store upper moving text
+    static char upper_string[100];
+    static int upper_strings_width = 0;
+    //init x-coordinate
+    //format string into Char Array
+    sprintf(upper_string, "This here needs to move");
+    tumGetTextSize((char *)upper_string,
+                    &upper_strings_width, NULL);
+    signed short upper_x = 640 / 2 - upper_strings_width / 2;
+    signed short upper_str_right;
+    signed short upper_str_left;
+    //initial moving to right side
+    bool change_mov_dir = false;
+    
 
     while (1) {
         tumEventFetchEvents(); // Query events backend for new events, ie. button presses
@@ -121,6 +139,7 @@ void vdrawFigures(void *pvParameters)
         circle_x = center_x + 100*cos(circle_angle);
         circle_y = center_y + 100*sin(circle_angle);
 
+        //draw Circle
         tumDrawCircle(circle_x,circle_y,circle_radius,TUMBlue); // Draw Circle
         
         //update coordiantes of Square
@@ -128,18 +147,43 @@ void vdrawFigures(void *pvParameters)
         box_x = center_x - 20 + 100*cos(square_angle);
         box_y = center_y + 100*sin(square_angle);
 
+        //draw Square
         tumDrawFilledBox(box_x, box_y, box_width, box_height, Green);
 
+        //draw lower TEXT
         //format string into char array
-        sprintf(random_string, "Random, (Q) to quit");
-        if (!tumGetTextSize((char *)random_string,
-                            &random_strings_width, NULL))
-            tumDrawText(random_string, 
-                        SCREEN_WIDTH / 2 -
-                        random_strings_width / 2, 
-                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 150,
-                        Black);
-        
+        sprintf(lower_string, "Random; q to exit.");
+        tumGetTextSize((char *)lower_string,
+                    &lower_strings_width, NULL);
+        tumDrawText(lower_string, 
+                    SCREEN_WIDTH / 2 -
+                    lower_strings_width / 2, 
+                    SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 150,
+                    Black);
+
+        //draw upper moving TEXT 
+        tumDrawText(upper_string, 
+                    upper_x, 
+                    SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 - 150,
+                    Black);
+
+        //calculate left and right constraint of text box
+        upper_str_right = upper_x + upper_strings_width;
+        upper_str_left = upper_x;
+        //conditional change in direction
+        if(change_mov_dir){
+            upper_x = upper_x - 10;
+        }
+        else{
+            upper_x = upper_x + 10;
+        }
+        if(upper_str_right >= 640){     //collision on right side
+            change_mov_dir = true;
+        }
+        if(upper_str_left <= 0){   //collision on left side
+            change_mov_dir = false;
+        }
+
         tumDrawUpdateScreen(); // Refresh the screen
         
         // Basic sleep of 1000 milliseconds
