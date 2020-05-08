@@ -68,8 +68,8 @@ void vDemoTask(void *pvParameters)
                                     Q)]) { // Equiv to SDL_SCANCODE_Q
                 exit(EXIT_SUCCESS);
             }
-            xSemaphoreGive(buttons.lock);
         }
+        xSemaphoreGive(buttons.lock);
 
         tumDrawClear(White); // Clear screen
 
