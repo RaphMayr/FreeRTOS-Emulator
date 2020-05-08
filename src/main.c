@@ -89,6 +89,10 @@ void vdrawFigures(void *pvParameters)
     //Angle for square rotation
     unsigned short square_angle = 0;
 
+    //structure to store lower text
+    static char random_string[100];
+    static int random_strings_width = 0;
+
     while (1) {
         tumEventFetchEvents(); // Query events backend for new events, ie. button presses
         xGetButtonInput(); // Update global input
@@ -125,6 +129,16 @@ void vdrawFigures(void *pvParameters)
         box_y = center_y + 100*sin(square_angle);
 
         tumDrawFilledBox(box_x, box_y, box_width, box_height, Green);
+
+        //format string into char array
+        sprintf(random_string, "Random, (Q) to quit");
+        if (!tumGetTextSize((char *)random_string,
+                            &random_strings_width, NULL))
+            tumDrawText(random_string, 
+                        SCREEN_WIDTH / 2 -
+                        random_strings_width / 2, 
+                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 150,
+                        Black);
         
         tumDrawUpdateScreen(); // Refresh the screen
         
