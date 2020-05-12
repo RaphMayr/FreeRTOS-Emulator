@@ -64,6 +64,26 @@ void vDemoTask(void *pvParameters)
     static char End_string[100];
     static int End_string_width = 0;
 
+    //debouncing declarations for A
+    int buttonState_A = 0;
+    int lastButtonState_A = 0;
+    clock_t lastDebounceTime_A;
+    
+    int buttonState_B = 0;
+    int lastButtonState_B = 0;
+    clock_t lastDebounceTime_B;
+
+    int buttonState_C = 0;
+    int lastButtonState_C = 0;
+    clock_t lastDebounceTime_C;
+
+    int buttonState_D = 0;
+    int lastButtonState_D = 0;
+    clock_t lastDebounceTime_D;
+
+    clock_t timestamp;
+    double debounce_delay = 0.025;
+
     // Needed such that Gfx library knows which thread controlls drawing
     // Only one thread can call tumDrawUpdateScreen while and thread can call
     // the drawing functions to draw objects. This is a limitation of the SDL
@@ -73,7 +93,6 @@ void vDemoTask(void *pvParameters)
     while (1) {
         tumEventFetchEvents(); // Query events backend for new events, ie. button presses
         xGetButtonInput(); // Update global input
-
         // `buttons` is a global shared variable and as such needs to be
         // guarded with a mutex, mutex must be obtained before accessing the
         // resource and given back when you're finished. If the mutex is not
@@ -82,18 +101,77 @@ void vDemoTask(void *pvParameters)
             if (buttons.buttons[KEYCODE(Q)]) { // Equiv to SDL_SCANCODE_Q
                 exit(EXIT_SUCCESS);
             }
-            if (buttons.buttons[KEYCODE(A)]){
-                A_count++;
+            //Get input values for A, B, C, D
+            //can be either 0 or 1
+            //1 signals pressed
+            int reading_A = buttons.buttons[KEYCODE(A)];
+            int reading_B = buttons.buttons[KEYCODE(B)];
+            int reading_C = buttons.buttons[KEYCODE(C)];
+            int reading_D = buttons.buttons[KEYCODE(D)];
+
+            //Debouncing structure for A
+            if(reading_A != lastButtonState_A){
+                lastDebounceTime_A = clock();
             }
-            if (buttons.buttons[KEYCODE(B)]){
-                B_count++;
+            timestamp = clock();
+            if((((double) (timestamp - lastDebounceTime_A)
+                    )/ CLOCKS_PER_SEC) > debounce_delay){
+                if (reading_A != buttonState_A){
+                    buttonState_A = reading_A;
+                    if (buttonState_A == 1){
+                        A_count++;
+                    }
+                }
             }
-            if (buttons.buttons[KEYCODE(C)]){
-                C_count++;
+            lastButtonState_A = reading_A;
+
+            //Debouncing structure for B 
+            if(reading_B != lastButtonState_B){
+                lastDebounceTime_B = clock();
             }
-            if (buttons.buttons[KEYCODE(D)]){
-                D_count++;
+            timestamp = clock();
+            if((((double) (timestamp - lastDebounceTime_B)
+                    )/ CLOCKS_PER_SEC) > debounce_delay){
+                if (reading_B != buttonState_B){
+                    buttonState_B = reading_B;
+                    if (buttonState_B == 1){
+                        B_count++;
+                    }
+                }
             }
+            lastButtonState_B = reading_B;
+
+            //Debouncing structure for C
+            if(reading_C != lastButtonState_C){
+                lastDebounceTime_C = clock();
+            }
+            timestamp = clock();
+            if((((double) (timestamp - lastDebounceTime_C)
+                    )/ CLOCKS_PER_SEC) > debounce_delay){
+                if (reading_C != buttonState_C){
+                    buttonState_C = reading_C;
+                    if (buttonState_C == 1){
+                        C_count++;
+                    }
+                }
+            }
+            lastButtonState_C = reading_C;
+
+            //Debouncing structure for D
+            if(reading_D != lastButtonState_D){
+                lastDebounceTime_D = clock();
+            }
+            timestamp = clock();
+            if((((double) (timestamp - lastDebounceTime_D)
+                    )/ CLOCKS_PER_SEC) > debounce_delay){
+                if (reading_D != buttonState_D){
+                    buttonState_D = reading_D;
+                    if (buttonState_D == 1){
+                        D_count++;
+                    }
+                }
+            }
+            lastButtonState_D = reading_D;
         }
         xSemaphoreGive(buttons.lock);
 
@@ -150,14 +228,10 @@ void vDemoTask(void *pvParameters)
             A_count = 0;
             B_count = 0;
             C_count = 0;
-            D_count = 0;
+            D_count = 0;    
         }
-        
 
-        tumDrawUpdateScreen(); // Refresh the screen to draw string
-
-        // Basic sleep of 1000 milliseconds
-        vTaskDelay((TickType_t)50);
+        tumDrawUpdateScreen(); // Refresh the screen 
     }
 }
 
