@@ -146,6 +146,13 @@ void vDemoTask(void *pvParameters)
                         SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 200,
                         TUMBlue);
 
+        if (tumEventGetMouseLeft()){
+            A_count = 0;
+            B_count = 0;
+            C_count = 0;
+            D_count = 0;
+        }
+        
 
         tumDrawUpdateScreen(); // Refresh the screen to draw string
 
