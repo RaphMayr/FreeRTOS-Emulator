@@ -44,10 +44,17 @@ void xGetButtonInput(void)
 
 void vDemoTask(void *pvParameters)
 {
-    // structure to store time retrieved from Linux kernel
-    static struct timespec the_time;
-    static char our_time_string[100];
-    static int our_time_strings_width = 0;
+    signed short mouse_X;
+    signed short mouse_Y;
+
+    static char x_position_str[100];
+    static int x_position_strwidth = 0;
+
+    static char y_position_str[100];
+    static int y_position_strwidth = 0;
+
+    static char quit_str[100];
+    static int quit_strwidth = 0;
 
     // Needed such that Gfx library knows which thread controlls drawing
     // Only one thread can call tumDrawUpdateScreen while and thread can call
@@ -73,28 +80,42 @@ void vDemoTask(void *pvParameters)
 
         tumDrawClear(White); // Clear screen
 
-        clock_gettime(CLOCK_REALTIME,
-                      &the_time); // Get kernel real time
+        mouse_X = tumEventGetMouseX();
+        mouse_Y = tumEventGetMouseY();
 
-        // Format our string into our char array
-        sprintf(our_time_string,
-                "There has been %ld seconds since the Epoch. Press Q to quit",
-                (long int)the_time.tv_sec);
+        sprintf(x_position_str, "X Position of Mouse: %i", mouse_X);
+        sprintf(y_position_str, "Y Position of Mouse: %i", mouse_Y);
+        sprintf(quit_str, "press (q) to quit.");
 
-        // Get the width of the string on the screen so we can center it
-        // Returns 0 if width was successfully obtained
-        if (!tumGetTextSize((char *)our_time_string,
-                            &our_time_strings_width, NULL))
-            tumDrawText(our_time_string,
+        if (!tumGetTextSize((char *)x_position_str,
+                            &x_position_strwidth, NULL))
+            tumDrawText(x_position_str,
                         SCREEN_WIDTH / 2 -
-                        our_time_strings_width / 2,
-                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2,
+                        x_position_strwidth / 2,
+                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 - 50,
+                        TUMBlue);
+        
+        if (!tumGetTextSize((char *)y_position_str,
+                            &y_position_strwidth, NULL))
+            tumDrawText(y_position_str,
+                        SCREEN_WIDTH / 2 -
+                        y_position_strwidth / 2,
+                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 50,
                         TUMBlue);
 
+        if (!tumGetTextSize((char *)quit_str,
+                            &quit_strwidth, NULL))
+            tumDrawText(quit_str,
+                        SCREEN_WIDTH / 2 -
+                        quit_strwidth / 2,
+                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 100,
+                        TUMBlue);
+
+        
         tumDrawUpdateScreen(); // Refresh the screen to draw string
 
-        // Basic sleep of 1000 milliseconds
-        vTaskDelay((TickType_t)1000);
+        // Basic sleep of 20 milliseconds
+        vTaskDelay((TickType_t)20);
     }
 }
 
