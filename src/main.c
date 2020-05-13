@@ -5,6 +5,7 @@
 #include <inttypes.h>
 
 #include <SDL2/SDL_scancode.h>
+#include <SDL2/SDL.h>
 
 #include "FreeRTOS.h"
 #include "queue.h"
@@ -22,8 +23,12 @@
 
 #define mainGENERIC_PRIORITY (tskIDLE_PRIORITY)
 #define mainGENERIC_STACK_SIZE ((unsigned short)2560)
+#define SCREEN_WIDTH 640 
+#define SCREEN_HEIGTH 480
 
 static TaskHandle_t DemoTask = NULL;
+
+extern SDL_Window *window;
 
 typedef struct buttons_buffer {
     unsigned char buttons[SDL_NUM_SCANCODES];
@@ -42,11 +47,13 @@ void xGetButtonInput(void)
 
 #define KEYCODE(CHAR) SDL_SCANCODE_##CHAR
 
-void vDemoTask(void *pvParameters)
-{
+void vMoveWindowTask(void *pvParameters)
+{   
+    // vars for Mouse coordinates
     signed short mouse_X;
     signed short mouse_Y;
-
+    
+    // vars for displaying text on window
     static char x_position_str[100];
     static int x_position_strwidth = 0;
 
@@ -56,6 +63,16 @@ void vDemoTask(void *pvParameters)
     static char quit_str[100];
     static int quit_strwidth = 0;
 
+    // vars for retrieving window coordinates
+    int *x = NULL;
+    int *y = NULL;
+    int x_coord, y_coord;
+    x = &x_coord;
+    y = &y_coord;
+
+    // vars for new coordinates
+    int x_new, y_new = 0;
+
     // Needed such that Gfx library knows which thread controlls drawing
     // Only one thread can call tumDrawUpdateScreen while and thread can call
     // the drawing functions to draw objects. This is a limitation of the SDL
@@ -64,7 +81,7 @@ void vDemoTask(void *pvParameters)
 
     while (1) {
         tumEventFetchEvents(); // Query events backend for new events, ie. button presses
-        xGetButtonInput(); // Update global input
+        xGetButtonInput(); // Update global input 
 
         // `buttons` is a global shared variable and as such needs to be
         // guarded with a mutex, mutex must be obtained before accessing the
@@ -78,11 +95,26 @@ void vDemoTask(void *pvParameters)
         }
         xSemaphoreGive(buttons.lock);
 
+        // gets window position and prints it to console
+        SDL_GetWindowPosition(window, x, y);
+        printf("x: %i y: %i \n", x_coord, y_coord);
+
         tumDrawClear(White); // Clear screen
 
+        // gets current mouse coordinates relative 
+        // to upper left corner of window
         mouse_X = tumEventGetMouseX();
         mouse_Y = tumEventGetMouseY();
 
+        // moving coordinate origin of mouse coord. to center of window
+        mouse_X = mouse_X - SCREEN_WIDTH / 2;
+        mouse_Y = mouse_Y - SCREEN_HEIGTH / 2;
+
+        // moving coordinate origin of window coord. to center of window
+        x_coord = x_coord - SCREEN_WIDTH / 2;
+        y_coord = y_coord - SCREEN_HEIGTH / 2;
+
+        // formatting and setting text for X and Y position of Mouse
         sprintf(x_position_str, "X Position of Mouse: %i", mouse_X);
         sprintf(y_position_str, "Y Position of Mouse: %i", mouse_Y);
         sprintf(quit_str, "press (q) to quit.");
@@ -111,8 +143,30 @@ void vDemoTask(void *pvParameters)
                         SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 100,
                         TUMBlue);
 
+        // calculating new coordinates relative to old ones
+        x_new = x_coord + mouse_X;
+        y_new = y_coord + mouse_Y;
+
+        // moving coordinate origin back to upper left corner of window
+        x_new = x_new + SCREEN_WIDTH / 2;
+        y_new = y_new + SCREEN_HEIGTH / 2;
+
+        // constraining moving space of window (Res. 1920x1080 px.)
+        if(x_new >= 1060){
+            x_new = 1060;
+        }
+        if(x_new <= 220){
+            x_new = 220;
+        }
+        if(y_new >= 420){
+            y_new = 420;
+        }
+        if(y_new <= 180){
+            y_new = 180;
+        }
         
-        tumDrawUpdateScreen(); // Refresh the screen to draw string
+        SDL_SetWindowPosition(window, x_new, y_new); // update window position
+        tumDrawUpdateScreen(); // Refresh window 
 
         // Basic sleep of 20 milliseconds
         vTaskDelay((TickType_t)20);
@@ -146,7 +200,7 @@ int main(int argc, char *argv[])
         goto err_buttons_lock;
     }
 
-    if (xTaskCreate(vDemoTask, "DemoTask", mainGENERIC_STACK_SIZE * 2, NULL,
+    if (xTaskCreate(vMoveWindowTask, "MoveWindowTask", mainGENERIC_STACK_SIZE * 2, NULL,
                     mainGENERIC_PRIORITY, &DemoTask) != pdPASS) {
         goto err_demotask;
     }
