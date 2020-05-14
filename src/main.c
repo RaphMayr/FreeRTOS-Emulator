@@ -64,7 +64,7 @@ void vDemoTask(void *pvParameters)
     static char End_string[100];
     static int End_string_width = 0;
 
-    //debouncing declarations for A
+    //debouncing declarations
     int buttonState_A = 0;
     int lastButtonState_A = 0;
     clock_t lastDebounceTime_A;
@@ -80,6 +80,10 @@ void vDemoTask(void *pvParameters)
     int buttonState_D = 0;
     int lastButtonState_D = 0;
     clock_t lastDebounceTime_D;
+
+    int buttonState_Mouse = 0;
+    int lastButtonState_Mouse = 0;
+    clock_t lastDebounceTime_Mouse;
 
     clock_t timestamp;
     double debounce_delay = 0.025;
@@ -224,12 +228,24 @@ void vDemoTask(void *pvParameters)
                         SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 200,
                         TUMBlue);
 
-        if (tumEventGetMouseLeft()){
-            A_count = 0;
-            B_count = 0;
-            C_count = 0;
-            D_count = 0;    
+        int reading_Mouse = tumEventGetMouseLeft();
+        if(reading_Mouse != lastButtonState_Mouse){
+            lastDebounceTime_Mouse = clock();
         }
+        timestamp = clock();
+        if((((double) (timestamp - lastDebounceTime_Mouse)
+                ) / CLOCKS_PER_SEC) > debounce_delay){
+            if (reading_Mouse != buttonState_Mouse){
+                    buttonState_Mouse = reading_Mouse;
+                if(buttonState_Mouse == 1){
+                    A_count = 0;
+                    B_count = 0;
+                    C_count = 0;
+                    D_count = 0; 
+                }
+            }
+        }
+        lastButtonState_Mouse = reading_Mouse;  
 
         tumDrawUpdateScreen(); // Refresh the screen 
     }
