@@ -45,7 +45,42 @@ void xGetButtonInput(void)
     }
 }
 
+void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer,
+                                    StackType_t **ppxIdleTaskStackBuffer,
+                                    uint32_t *pulIdleTaskStackSize )
+{
+    /* If the buffers to be provided to the Idle task are declared inside this
+    function then they must be declared static – otherwise they will be allocated on
+    the stack and so not exists after this function exits. */
+    static StaticTask_t xIdleTaskTCB;
+    static StackType_t uxIdleTaskStack[ configMINIMAL_STACK_SIZE ];
+
+    /* Pass out a pointer to the StaticTask_t structure in which the Idle task’s
+    state will be stored. */
+    *ppxIdleTaskTCBBuffer = &xIdleTaskTCB;
+
+    /* Pass out the array that will be used as the Idle task’s stack. */
+    *ppxIdleTaskStackBuffer = uxIdleTaskStack;
+
+    /* Pass out the size of the array pointed to by *ppxIdleTaskStackBuffer.
+    Note that, as the array is necessarily of type StackType_t,
+    configMINIMAL_STACK_SIZE is specified in words, not bytes. */
+    *pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
+}
+
 #define KEYCODE(CHAR) SDL_SCANCODE_##CHAR
+
+static int vCheckStateInput(void)
+{
+    if (xSemaphoreTake(buttons.lock, 0) == pdTRUE) {
+        if (buttons.buttons[KEYCODE(Q)]) {
+            
+        }
+        xSemaphoreGive(buttons.lock);
+    }
+
+    return 0;
+}
 
 void vTask_frequ1(void *pvParameters)   //frequency at 1 Hz
 {   
@@ -61,6 +96,7 @@ void vTask_frequ1(void *pvParameters)   //frequency at 1 Hz
 
     while (1) {
         tumEventFetchEvents(); // Query events backend for new events, ie. button presses
+        xGetButtonInput();
 
         tumDrawClear(White); // Clear screen
         tumDrawUpdateScreen();
@@ -70,6 +106,8 @@ void vTask_frequ1(void *pvParameters)   //frequency at 1 Hz
         tumDrawCircle(circle_x,circle_y,circle_radius,TUMBlue); // Draw Circle
         tumDrawUpdateScreen();
         vTaskDelay((TickType_t)500);
+
+        vCheckStateInput();
     }
 }
 
@@ -87,6 +125,7 @@ void vTask_frequ2(void *pvParameters)   //frequency at 2 Hz
 
     while (1) {
         tumEventFetchEvents(); // Query events backend for new events, ie. button presses
+        xGetButtonInput();
 
         tumDrawClear(White); // Clear screen
         tumDrawUpdateScreen();
@@ -96,6 +135,8 @@ void vTask_frequ2(void *pvParameters)   //frequency at 2 Hz
         tumDrawCircle(circle_x,circle_y,circle_radius,TUMBlue); // Draw Circle
         tumDrawUpdateScreen();
         vTaskDelay((TickType_t)250);
+
+        vCheckStateInput();
     }
 }
 
@@ -131,10 +172,8 @@ int main(int argc, char *argv[])
                     mainGENERIC_PRIORITY, &task_frequ1) != pdPASS) {
         goto err_task_frequ1;
     }
-    if (xTaskCreateStatic(vTask_frequ2, "Task with 2Hz", 20 * 2, NULL,
-                    mainGENERIC_PRIORITY, xStack, &xTaskBuffer) != pdPASS) {
-        goto err_task_frequ2;
-    }
+    xTaskCreateStatic(vTask_frequ2, "Task with 2Hz", 20 * 2, NULL,
+                        (configMAX_PRIORITIES - 1), xStack, &xTaskBuffer);
     
     vTaskStartScheduler();
 
@@ -142,8 +181,6 @@ int main(int argc, char *argv[])
 
 err_task_frequ1: 
     vSemaphoreDelete(buttons.lock);
-err_task_frequ2:
-    vTaskDelete(vTask_frequ2);
 err_buttons_lock:
     tumSoundExit();
 err_init_audio:
