@@ -23,12 +23,12 @@
 
 #define mainGENERIC_PRIORITY (tskIDLE_PRIORITY)
 #define mainGENERIC_STACK_SIZE ((unsigned short)2560)
-#define SCREEN_WIDTH 640 
-#define SCREEN_HEIGTH 480
 
-static TaskHandle_t DemoTask = NULL;
+TaskHandle_t task_frequ1 = NULL;
+TaskHandle_t task_frequ2 = NULL;
 
-extern SDL_Window *window;
+StaticTask_t xTaskBuffer;
+StackType_t xStack[mainGENERIC_STACK_SIZE];
 
 typedef struct buttons_buffer {
     unsigned char buttons[SDL_NUM_SCANCODES];
@@ -47,131 +47,58 @@ void xGetButtonInput(void)
 
 #define KEYCODE(CHAR) SDL_SCANCODE_##CHAR
 
-void vMoveWindowTask(void *pvParameters)
+void vTask_frequ1(void *pvParameters)   //frequency at 1 Hz
 {   
-    // vars for Mouse coordinates
-    signed short mouse_X;
-    signed short mouse_Y;
-    
-    // vars for displaying text on window
-    static char x_position_str[100];
-    static int x_position_strwidth = 0;
 
-    static char y_position_str[100];
-    static int y_position_strwidth = 0;
+    signed short center_x = SCREEN_WIDTH/2;
+    signed short center_y = SCREEN_HEIGHT/2;
 
-    static char quit_str[100];
-    static int quit_strwidth = 0;
+    signed short circle_x = center_x;
+    signed short circle_y = center_y;
+   	signed short circle_radius = 50;
 
-    // vars for retrieving window coordinates
-    int *x = NULL;
-    int *y = NULL;
-    int x_coord, y_coord;
-    x = &x_coord;
-    y = &y_coord;
-
-    // vars for new coordinates
-    int x_new, y_new = 0;
-
-    // Needed such that Gfx library knows which thread controlls drawing
-    // Only one thread can call tumDrawUpdateScreen while and thread can call
-    // the drawing functions to draw objects. This is a limitation of the SDL
-    // backend.
     tumDrawBindThread();
 
     while (1) {
         tumEventFetchEvents(); // Query events backend for new events, ie. button presses
-        xGetButtonInput(); // Update global input 
-
-        // `buttons` is a global shared variable and as such needs to be
-        // guarded with a mutex, mutex must be obtained before accessing the
-        // resource and given back when you're finished. If the mutex is not
-        // given back then no other task can access the reseource.
-        if (xSemaphoreTake(buttons.lock, 0) == pdTRUE) {
-            if (buttons.buttons[KEYCODE(
-                                    Q)]) { // Equiv to SDL_SCANCODE_Q
-                exit(EXIT_SUCCESS);
-            }
-        }
-        xSemaphoreGive(buttons.lock);
-
-        // gets window position and prints it to console
-        SDL_GetWindowPosition(window, x, y);
-        printf("x: %i y: %i \n", x_coord, y_coord);
 
         tumDrawClear(White); // Clear screen
+        tumDrawUpdateScreen();
+        vTaskDelay((TickType_t)500);
 
-        // gets current mouse coordinates relative 
-        // to upper left corner of window
-        mouse_X = tumEventGetMouseX();
-        mouse_Y = tumEventGetMouseY();
 
-        // moving coordinate origin of mouse coord. to center of window
-        mouse_X = mouse_X - SCREEN_WIDTH / 2;
-        mouse_Y = mouse_Y - SCREEN_HEIGTH / 2;
-
-        // moving coordinate origin of window coord. to center of window
-        x_coord = x_coord - SCREEN_WIDTH / 2;
-        y_coord = y_coord - SCREEN_HEIGTH / 2;
-
-        // formatting and setting text for X and Y position of Mouse
-        sprintf(x_position_str, "X Position of Mouse: %i", mouse_X);
-        sprintf(y_position_str, "Y Position of Mouse: %i", mouse_Y);
-        sprintf(quit_str, "press (q) to quit.");
-
-        if (!tumGetTextSize((char *)x_position_str,
-                            &x_position_strwidth, NULL))
-            tumDrawText(x_position_str,
-                        SCREEN_WIDTH / 2 -
-                        x_position_strwidth / 2,
-                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 - 50,
-                        TUMBlue);
-        
-        if (!tumGetTextSize((char *)y_position_str,
-                            &y_position_strwidth, NULL))
-            tumDrawText(y_position_str,
-                        SCREEN_WIDTH / 2 -
-                        y_position_strwidth / 2,
-                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 50,
-                        TUMBlue);
-
-        if (!tumGetTextSize((char *)quit_str,
-                            &quit_strwidth, NULL))
-            tumDrawText(quit_str,
-                        SCREEN_WIDTH / 2 -
-                        quit_strwidth / 2,
-                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 100,
-                        TUMBlue);
-
-        // calculating new coordinates relative to old ones
-        x_new = x_coord + mouse_X;
-        y_new = y_coord + mouse_Y;
-
-        // moving coordinate origin back to upper left corner of window
-        x_new = x_new + SCREEN_WIDTH / 2;
-        y_new = y_new + SCREEN_HEIGTH / 2;
-
-        // constraining moving space of window (Res. 1920x1080 px.)
-        if(x_new >= 1060){
-            x_new = 1060;
-        }
-        if(x_new <= 220){
-            x_new = 220;
-        }
-        if(y_new >= 420){
-            y_new = 420;
-        }
-        if(y_new <= 180){
-            y_new = 180;
-        }
-        
-        SDL_SetWindowPosition(window, x_new, y_new); // update window position
-        tumDrawUpdateScreen(); // Refresh window 
-
-        // Basic sleep of 20 milliseconds
-        vTaskDelay((TickType_t)20);
+        tumDrawCircle(circle_x,circle_y,circle_radius,TUMBlue); // Draw Circle
+        tumDrawUpdateScreen();
+        vTaskDelay((TickType_t)500);
     }
 }
+
+void vTask_frequ2(void *pvParameters)   //frequency at 2 Hz
+{   
+
+    signed short center_x = SCREEN_WIDTH/2;
+    signed short center_y = SCREEN_HEIGHT/2;
+
+    signed short circle_x = center_x;
+    signed short circle_y = center_y;
+   	signed short circle_radius = 50;
+    
+    tumDrawBindThread();
+
+    while (1) {
+        tumEventFetchEvents(); // Query events backend for new events, ie. button presses
+
+        tumDrawClear(White); // Clear screen
+        tumDrawUpdateScreen();
+        vTaskDelay((TickType_t)250);
+
+
+        tumDrawCircle(circle_x,circle_y,circle_radius,TUMBlue); // Draw Circle
+        tumDrawUpdateScreen();
+        vTaskDelay((TickType_t)250);
+    }
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -200,17 +127,23 @@ int main(int argc, char *argv[])
         goto err_buttons_lock;
     }
 
-    if (xTaskCreate(vMoveWindowTask, "MoveWindowTask", mainGENERIC_STACK_SIZE * 2, NULL,
-                    mainGENERIC_PRIORITY, &DemoTask) != pdPASS) {
-        goto err_demotask;
+    if (xTaskCreate(vTask_frequ1, "Task with 1Hz", mainGENERIC_STACK_SIZE * 2, NULL,
+                    mainGENERIC_PRIORITY, &task_frequ1) != pdPASS) {
+        goto err_task_frequ1;
     }
-
+    if (xTaskCreateStatic(vTask_frequ2, "Task with 2Hz", 20 * 2, NULL,
+                    mainGENERIC_PRIORITY, xStack, &xTaskBuffer) != pdPASS) {
+        goto err_task_frequ2;
+    }
+    
     vTaskStartScheduler();
 
     return EXIT_SUCCESS;
 
-err_demotask:
+err_task_frequ1: 
     vSemaphoreDelete(buttons.lock);
+err_task_frequ2:
+    vTaskDelete(vTask_frequ2);
 err_buttons_lock:
     tumSoundExit();
 err_init_audio:
