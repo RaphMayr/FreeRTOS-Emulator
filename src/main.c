@@ -5,7 +5,6 @@
 #include <inttypes.h>
 
 #include <SDL2/SDL_scancode.h>
-#include <SDL2/SDL.h>
 
 #include "FreeRTOS.h"
 #include "queue.h"
@@ -24,11 +23,14 @@
 #define mainGENERIC_PRIORITY (tskIDLE_PRIORITY)
 #define mainGENERIC_STACK_SIZE ((unsigned short)2560)
 
-TaskHandle_t task_frequ1 = NULL;
-TaskHandle_t task_frequ2 = NULL;
+#define KEYCODE(CHAR) SDL_SCANCODE_##CHAR
 
-StaticTask_t xTaskBuffer;
-StackType_t xStack[mainGENERIC_STACK_SIZE];
+static TaskHandle_t task_frequ1 = NULL;
+
+static SemaphoreHandle_t ScreenLock = NULL;
+
+static StaticTask_t xTaskBuffer;
+static StackType_t xStack[mainGENERIC_STACK_SIZE * 2];
 
 typedef struct buttons_buffer {
     unsigned char buttons[SDL_NUM_SCANCODES];
@@ -36,6 +38,7 @@ typedef struct buttons_buffer {
 } buttons_buffer_t;
 
 static buttons_buffer_t buttons = { 0 };
+
 
 void xGetButtonInput(void)
 {
@@ -68,78 +71,207 @@ void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer,
     *pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
 }
 
-#define KEYCODE(CHAR) SDL_SCANCODE_##CHAR
-
-static int vCheckStateInput(void)
+void checkDraw(unsigned char status, const char *msg)
 {
-    if (xSemaphoreTake(buttons.lock, 0) == pdTRUE) {
-        if (buttons.buttons[KEYCODE(Q)]) {
-            
+    if (status) {
+        if (msg)
+            fprintf(stderr, "[ERROR] %s, %s\n", msg,
+                    tumGetErrorMessage());
+        else {
+            fprintf(stderr, "[ERROR] %s\n", tumGetErrorMessage());
         }
-        xSemaphoreGive(buttons.lock);
-    }
-
-    return 0;
-}
-
-void vTask_frequ1(void *pvParameters)   //frequency at 1 Hz
-{   
-
-    signed short center_x = SCREEN_WIDTH/2;
-    signed short center_y = SCREEN_HEIGHT/2;
-
-    signed short circle_x = center_x;
-    signed short circle_y = center_y;
-   	signed short circle_radius = 50;
-
-    tumDrawBindThread();
-
-    while (1) {
-        tumEventFetchEvents(); // Query events backend for new events, ie. button presses
-        xGetButtonInput();
-
-        tumDrawClear(White); // Clear screen
-        tumDrawUpdateScreen();
-        vTaskDelay((TickType_t)500);
-
-
-        tumDrawCircle(circle_x,circle_y,circle_radius,TUMBlue); // Draw Circle
-        tumDrawUpdateScreen();
-        vTaskDelay((TickType_t)500);
-
-        vCheckStateInput();
     }
 }
 
-void vTask_frequ2(void *pvParameters)   //frequency at 2 Hz
+#define FPS_AVERAGE_COUNT 50
+#define FPS_FONT "IBMPlexSans-Bold.ttf"
+
+void vDrawFPS(void)
+{
+    static unsigned int periods[FPS_AVERAGE_COUNT] = { 0 };
+    static unsigned int periods_total = 0;
+    static unsigned int index = 0;
+    static unsigned int average_count = 0;
+    static TickType_t xLastWakeTime = 0, prevWakeTime = 0;
+    static char str[10] = { 0 };
+    static int text_width;
+    int fps = 0;
+    font_handle_t cur_font = tumFontGetCurFontHandle();
+
+    xLastWakeTime = xTaskGetTickCount();
+
+    if (prevWakeTime != xLastWakeTime) {
+        periods[index] =
+            configTICK_RATE_HZ / (xLastWakeTime - prevWakeTime);
+        prevWakeTime = xLastWakeTime;
+    }
+    else {
+        periods[index] = 0;
+    }
+
+    periods_total += periods[index];
+
+    if (index == (FPS_AVERAGE_COUNT - 1)) {
+        index = 0;
+    }
+    else {
+        index++;
+    }
+
+    if (average_count < FPS_AVERAGE_COUNT) {
+        average_count++;
+    }
+    else {
+        periods_total -= periods[index];
+    }
+
+    fps = periods_total / average_count;
+
+    tumFontSelectFontFromName(FPS_FONT);
+
+    sprintf(str, "FPS: %2d", fps);
+
+    if (!tumGetTextSize((char *)str, &text_width, NULL))
+        checkDraw(tumDrawText(str, SCREEN_WIDTH - text_width - 10,
+                              SCREEN_HEIGHT - DEFAULT_FONT_SIZE * 1.5,
+                              Skyblue),
+                  __FUNCTION__);
+
+    tumFontSelectFontFromHandle(cur_font);
+    tumFontPutFontHandle(cur_font);
+}
+
+// Tasks #######################################
+
+void vTask_frequ1(void *pvParameters)
 {   
-
-    signed short center_x = SCREEN_WIDTH/2;
-    signed short center_y = SCREEN_HEIGHT/2;
-
-    signed short circle_x = center_x;
-    signed short circle_y = center_y;
-   	signed short circle_radius = 50;
+    TickType_t xLastWakeTime;
+    const TickType_t frameratePeriod = 20;
     
+    xLastWakeTime = xTaskGetTickCount();
+
     tumDrawBindThread();
 
+    signed short center_x = SCREEN_WIDTH/2;
+    signed short center_y = SCREEN_HEIGHT/2;
+
+    signed short circle_x = center_x;
+    signed short circle_y = center_y;
+   	signed short circle_radius = 50;
+
+    unsigned short ticks = 0;
+    int change = 0;
+
     while (1) {
-        tumEventFetchEvents(); // Query events backend for new events, ie. button presses
+        tumEventFetchEvents();
         xGetButtonInput();
 
-        tumDrawClear(White); // Clear screen
-        tumDrawUpdateScreen();
-        vTaskDelay((TickType_t)250);
+        if (xSemaphoreTake(buttons.lock, 0) == pdTRUE) {
+            if (buttons.buttons[KEYCODE(Q)]) {
+                exit(EXIT_SUCCESS);
+            }
+            xSemaphoreGive(buttons.lock);
+        }
 
+        if (ticks >= 25){
+            change = 1;
+        }
+        else{
+            change = 0;
+        }
+        if (ticks == 50){
+            ticks = 0;
+        }
 
-        tumDrawCircle(circle_x,circle_y,circle_radius,TUMBlue); // Draw Circle
-        tumDrawUpdateScreen();
-        vTaskDelay((TickType_t)250);
+        // locking screen to draw
+        if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
 
-        vCheckStateInput();
+            if(change){
+                tumDrawClear(White);
+            }
+            else{
+                tumDrawClear(White);
+                tumDrawCircle(circle_x, circle_y, circle_radius,
+                                TUMBlue);
+            }
+            vDrawFPS();
+
+            xSemaphoreGive(ScreenLock);
+        }
+
+        tumDrawUpdateScreen(); // Refresh screen 
+
+        ticks++;
+        vTaskDelayUntil(&xLastWakeTime, 
+                        pdMS_TO_TICKS(frameratePeriod));
     }
 }
 
+void vTask_frequ2(void *pvParameters)
+{   
+    TickType_t xLastWakeTime;
+    const TickType_t frameratePeriod = 10;
+    
+    xLastWakeTime = xTaskGetTickCount();
+
+    tumDrawBindThread();
+
+    signed short center_x = SCREEN_WIDTH/2;
+    signed short center_y = SCREEN_HEIGHT/2;
+
+    signed short circle_x = center_x;
+    signed short circle_y = center_y;
+   	signed short circle_radius = 50;
+
+    unsigned short ticks = 0;
+    int change = 0;
+
+    while (1) {
+        tumEventFetchEvents();
+        xGetButtonInput();
+
+        if (xSemaphoreTake(buttons.lock, 0) == pdTRUE) {
+            if (buttons.buttons[KEYCODE(Q)]) {
+                exit(EXIT_SUCCESS);
+            }
+            xSemaphoreGive(buttons.lock);
+        }
+
+        if (ticks >= 25){
+            change = 1;
+        }
+        else{
+            change = 0;
+        }
+        if (ticks == 50){
+            ticks = 0;
+        }
+
+        // locking screen to draw
+        if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
+
+            if(change){
+                tumDrawClear(White);
+            }
+            else{
+                tumDrawClear(White);
+                tumDrawCircle(circle_x, circle_y, circle_radius,
+                                TUMBlue);
+            }
+            vDrawFPS();
+
+            xSemaphoreGive(ScreenLock);
+        }
+
+        tumDrawUpdateScreen(); // Refresh screen 
+
+        ticks++;
+        vTaskDelayUntil(&xLastWakeTime, 
+                        pdMS_TO_TICKS(frameratePeriod));
+    }
+}
+
+// main function ################################
 
 int main(int argc, char *argv[])
 {
@@ -168,18 +300,23 @@ int main(int argc, char *argv[])
         goto err_buttons_lock;
     }
 
-    if (xTaskCreate(vTask_frequ1, "Task with 1Hz", mainGENERIC_STACK_SIZE * 2, NULL,
-                    mainGENERIC_PRIORITY, &task_frequ1) != pdPASS) {
+    ScreenLock = xSemaphoreCreateMutex();
+    if (!ScreenLock){
+        PRINT_ERROR("Failed to create Screen lock");
+    }
+
+    if (xTaskCreate(vTask_frequ1, "Draw Circle with 1Hz", mainGENERIC_STACK_SIZE * 2, 
+                    NULL, mainGENERIC_PRIORITY, &task_frequ1) != pdPASS) {
         goto err_task_frequ1;
     }
-    xTaskCreateStatic(vTask_frequ2, "Task with 2Hz", 20 * 2, NULL,
-                        (configMAX_PRIORITIES - 1), xStack, &xTaskBuffer);
-    
+    xTaskCreateStatic(vTask_frequ2, "Draw Circle with 2Hz", mainGENERIC_STACK_SIZE * 2,
+                        NULL, (configMAX_PRIORITIES - 1), xStack, &xTaskBuffer);
+
     vTaskStartScheduler();
 
     return EXIT_SUCCESS;
 
-err_task_frequ1: 
+err_task_frequ1:
     vSemaphoreDelete(buttons.lock);
 err_buttons_lock:
     tumSoundExit();
@@ -190,6 +327,9 @@ err_init_events:
 err_init_drawing:
     return EXIT_FAILURE;
 }
+
+// ###########################################
+
 
 // cppcheck-suppress unusedFunction
 __attribute__((unused)) void vMainQueueSendPassed(void)
