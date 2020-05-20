@@ -26,8 +26,13 @@
 #define KEYCODE(CHAR) SDL_SCANCODE_##CHAR
 
 static TaskHandle_t task_frequ1 = NULL;
+static TaskHandle_t task3 = NULL;
+static TaskHandle_t task4 = NULL;
 
 static SemaphoreHandle_t ScreenLock = NULL;
+static SemaphoreHandle_t task3Lock = NULL;
+
+static void vTask4 (void *pvParameters);
 
 static StaticTask_t xTaskBuffer;
 static StackType_t xStack[mainGENERIC_STACK_SIZE * 2];
@@ -160,7 +165,7 @@ void vTask_frequ1(void *pvParameters)
    	signed short circle_radius = 50;
 
     unsigned short ticks = 0;
-    int change = 0;
+    short change = 0;
 
     while (1) {
         tumEventFetchEvents();
@@ -169,10 +174,9 @@ void vTask_frequ1(void *pvParameters)
         if (xSemaphoreTake(buttons.lock, 0) == pdTRUE) {
             if (buttons.buttons[KEYCODE(Q)]) {
                 exit(EXIT_SUCCESS);
-            }
-            xSemaphoreGive(buttons.lock);
+        xSemaphoreGive(buttons.lock);
         }
-
+        }
         if (ticks >= 25){
             change = 1;
         }
@@ -223,18 +227,21 @@ void vTask_frequ2(void *pvParameters)
     signed short circle_y = center_y;
    	signed short circle_radius = 50;
 
-    unsigned short ticks = 0;
-    int change = 0;
+    unsigned int ticks = 0;
+    short change = 0;
+
+    //static BaseType_t xHigherPriorityTaskWoken;
+    //xHigherPriorityTaskWoken = pdFALSE; 
 
     while (1) {
         tumEventFetchEvents();
         xGetButtonInput();
-
+        
         if (xSemaphoreTake(buttons.lock, 0) == pdTRUE) {
             if (buttons.buttons[KEYCODE(Q)]) {
                 exit(EXIT_SUCCESS);
             }
-            xSemaphoreGive(buttons.lock);
+        xSemaphoreGive(buttons.lock);
         }
 
         if (ticks >= 25){
@@ -270,7 +277,60 @@ void vTask_frequ2(void *pvParameters)
                         pdMS_TO_TICKS(frameratePeriod));
     }
 }
+/*
+void vTask3(void *pvParameters)
+{
+    TickType_t xLastWakeTime;
+    const TickType_t frameratePeriod = 10;
+    xLastWakeTime = xTaskGetTickCount();
 
+    static char t_count_str[100];
+    static int t_count_str_width = 0;
+    
+    tumDrawBindThread();
+
+    task3Lock = xSemaphoreCreateBinary();
+
+    while(1) {
+        if (xSemaphoreTake (task3Lock, portMAX_DELAY) == pdTRUE) {
+            tumEventFetchEvents();
+            xGetButtonInput();
+
+            sprintf(t_count_str, "Pressed T (i) times.");
+            if (!tumGetTextSize((char *)t_count_str,
+                            &t_count_str_width, NULL))
+            
+        
+            // locking screen to draw
+            if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
+                
+                //display how many times letter T was pressed
+                tumDrawText(t_count_str, 
+                        SCREEN_WIDTH / 2 -
+                        t_count_str_width / 2, 
+                        SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 150,
+                        Black);
+                tumDrawClear(White);
+
+                xSemaphoreGive(ScreenLock);
+            }
+
+
+            tumDrawUpdateScreen(); // Refresh screen 
+
+            vTaskDelayUntil(&xLastWakeTime, 
+                            pdMS_TO_TICKS(frameratePeriod));
+        }
+    }
+
+}
+
+void vTask4(void *pvParameters)
+{
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+ 
+}
+*/
 // main function ################################
 
 int main(int argc, char *argv[])
@@ -306,11 +366,13 @@ int main(int argc, char *argv[])
     }
 
     if (xTaskCreate(vTask_frequ1, "Draw Circle with 1Hz", mainGENERIC_STACK_SIZE * 2, 
-                    NULL, mainGENERIC_PRIORITY, &task_frequ1) != pdPASS) {
+                    NULL, (configMAX_PRIORITIES - 2), &task_frequ1) != pdPASS) {
         goto err_task_frequ1;
     }
     xTaskCreateStatic(vTask_frequ2, "Draw Circle with 2Hz", mainGENERIC_STACK_SIZE * 2,
                         NULL, (configMAX_PRIORITIES - 1), xStack, &xTaskBuffer);
+
+    
 
     vTaskStartScheduler();
 
