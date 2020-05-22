@@ -10,6 +10,7 @@
 #include "queue.h"
 #include "semphr.h"
 #include "task.h"
+#include "timers.h"
 
 #include "TUM_Ball.h"
 #include "TUM_Draw.h"
@@ -27,14 +28,22 @@
 
 static TaskHandle_t task_frequ1 = NULL;
 static TaskHandle_t task4 = NULL;
+static TaskHandle_t timer_task = NULL;
+static TaskHandle_t control_task = NULL;
 
 static SemaphoreHandle_t ScreenLock = NULL;
 static SemaphoreHandle_t DrawSignal = NULL;
-
 static SemaphoreHandle_t task3_signal = NULL;
+static SemaphoreHandle_t counter_T_lock = NULL;
+static SemaphoreHandle_t counter_F_lock = NULL;
 
 static StaticTask_t xTaskBuffer;
 static StackType_t xStack[mainGENERIC_STACK_SIZE];
+
+static int counter_T = 0;
+static int counter_F = 0;
+
+TimerHandle_t xResetTimer = NULL;
 
 typedef struct buttons_buffer {
     unsigned char buttons[SDL_NUM_SCANCODES];
@@ -74,6 +83,29 @@ void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer,
     configMINIMAL_STACK_SIZE is specified in words, not bytes. */
     *pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
 }
+
+void vApplicationGetTimerTaskMemory( StaticTask_t **ppxTimerTaskTCBBuffer,
+                                    StackType_t **ppxTimerTaskStackBuffer,
+                                    uint32_t *pulTimerTaskStackSize)
+{
+    /* If the buffers to be provided to the Timer task are declared inside this
+    function then they must be declared static – otherwise they will be allocated on
+    the stack and so not exists after this function exits. */
+    static StaticTask_t xTimerTaskTCB;
+    static StackType_t uxTimerTaskStack[ configTIMER_TASK_STACK_DEPTH ];
+
+    /* Pass out a pointer to the StaticTask_t structure in which the Timer
+    task’s state will be stored. */
+    *ppxTimerTaskTCBBuffer = &xTimerTaskTCB;
+
+    /* Pass out the array that will be used as the Timer task’s stack. */
+    *ppxTimerTaskStackBuffer = uxTimerTaskStack;
+
+    /* Pass out the size of the array pointed to by *ppxTimerTaskStackBuffer.
+    Note that, as the array is necessarily of type StackType_t,
+    configTIMER_TASK_STACK_DEPTH is specified in words, not bytes. */
+    *pulTimerTaskStackSize = configTIMER_TASK_STACK_DEPTH;
+}                                   
 
 void checkDraw(unsigned char status, const char *msg)
 {
@@ -156,14 +188,28 @@ void vCheckInput(void) {
     int reading_T = buttons.buttons[KEYCODE(T)];
     // (F) for triggering Task 4
     int reading_F = buttons.buttons[KEYCODE(F)];
+    // (C) for send controlTask to sleep/resume
+    int reading_C = buttons.buttons[KEYCODE(C)];
     
     if (reading_T) {
         xSemaphoreGive(task3_signal);
         vTaskDelay(750);
     }
-
     if(reading_F){
         xTaskNotifyGive(task4);
+        vTaskDelay(750);
+    }
+    if(reading_C){
+        if(eTaskGetState(control_task) == eReady || 
+            eTaskGetState(control_task) == eRunning ||
+            eTaskGetState(control_task) == eBlocked) {
+            vTaskSuspend(control_task);
+        }
+        else
+        {
+            vTaskResume(control_task);
+        }
+        
         vTaskDelay(750);
     }
 }
@@ -227,8 +273,6 @@ void vTask_frequ1(void *pvParameters)
     }
 }
 
-
-
 void vTask_frequ2(void *pvParameters)
 {   
     tumDrawBindThread();
@@ -288,8 +332,6 @@ void vTask_frequ2(void *pvParameters)
 }
 
 void vTask3 (void *pvParameters) {
-    // counter needs to be global
-    int counter_t = 0;
 
     static char counter_t_str[100];
     static int counter_t_str_width = 0;
@@ -298,12 +340,14 @@ void vTask3 (void *pvParameters) {
 
     while(1) {
         if(xSemaphoreTake(task3_signal, portMAX_DELAY)){
-            
-            counter_t++;
+            if(xSemaphoreTake(counter_T_lock, 0)) {
+                counter_T++;
+                xSemaphoreGive(counter_T_lock);
+            }
             for (int i=0; i < 10; i++) {
                 tumDrawClear(White);
                 sprintf(counter_t_str, 
-                        "(T) was pressed %i times.", counter_t);
+                        "(T) was pressed %i times.", counter_T);
                 
                 if (!tumGetTextSize((char *)counter_t_str,
                                     &counter_t_str_width, NULL)) {
@@ -324,8 +368,6 @@ void vTask3 (void *pvParameters) {
 
 void vTask4 (void *pvParameters) {
 
-    int counter_f = 0;
-
     static char counter_f_str[100];
     static int counter_f_str_width = 0;
 
@@ -333,12 +375,14 @@ void vTask4 (void *pvParameters) {
 
     while(1) {
         if(ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
-
-            counter_f++;
+            if(xSemaphoreTake(counter_F_lock, 0)) {
+                counter_F++;
+                xSemaphoreGive(counter_F_lock);
+            }
             for (int i=0; i < 10; i++) {
                 tumDrawClear(White);
                 sprintf(counter_f_str, 
-                        "(F) was pressed %i times.", counter_f);
+                        "(F) was pressed %i times.", counter_F);
                 
                 if (!tumGetTextSize((char *)counter_f_str,
                                     &counter_f_str_width, NULL)) {
@@ -357,6 +401,58 @@ void vTask4 (void *pvParameters) {
     }
 }
 
+void vTimerCallbackReset( TimerHandle_t xTimer )
+{
+    if (xTimerReset(xTimer, 0) == pdPASS){
+        xTaskNotifyGive(timer_task);
+    }
+    else{
+        PRINT_ERROR("failed to reset timer.");
+    }
+}
+
+void vResetCounterTask (void *pvParameter) {
+    
+    while(1) {
+        if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)){
+            // reset variables
+            if(xSemaphoreTake(counter_T_lock, 0)){
+                counter_T = 0;
+                printf("T reset done.\n");
+                xSemaphoreGive(counter_T_lock);
+            }
+            if(xSemaphoreTake(counter_F_lock, 0)){
+                counter_F = 0;
+                printf("F reset done.\n");
+                xSemaphoreGive(counter_F_lock);
+            }
+        }
+
+    }
+}
+
+void vTaskControlMechanisms (void *pvParameter) {
+    
+    int counter = 0;
+    int ticks = 0;
+
+    while(1) {
+        tumEventFetchEvents();
+        xGetButtonInput();
+                    
+        if (xSemaphoreTake(buttons.lock, 0) == pdTRUE) {
+            vCheckInput();
+            xSemaphoreGive(buttons.lock);
+        }
+        ticks++;
+        if(ticks == 100) {
+            counter++;
+            ticks = 0;
+            printf("counter:%i\n", counter);
+        }
+        vTaskDelay(10);
+    }
+}
 
 // main function ################################
 
@@ -401,6 +497,13 @@ int main(int argc, char *argv[])
     vSemaphoreCreateBinary(task3_signal);
     xSemaphoreTake(task3_signal, 0);
 
+    counter_T_lock = xSemaphoreCreateMutex();
+    counter_F_lock = xSemaphoreCreateMutex();
+
+    xResetTimer = xTimerCreate("timer", pdMS_TO_TICKS(15000), pdTRUE, 
+                                (void*) 0, vTimerCallbackReset);
+    xTimerStart(xResetTimer, 0);
+
     if (xTaskCreate(vTask_frequ1, "Draw Circle with 1Hz", mainGENERIC_STACK_SIZE * 2, 
                     NULL, (configMAX_PRIORITIES - 2), &task_frequ1) != pdPASS) {
         goto err_task_frequ1;
@@ -413,6 +516,12 @@ int main(int argc, char *argv[])
 
     xTaskCreate(vTask4, "Task4", mainGENERIC_STACK_SIZE,
                 NULL, (configMAX_PRIORITIES - 1), &task4);
+
+    xTaskCreate(vResetCounterTask, "Reset Counters", mainGENERIC_STACK_SIZE,
+                NULL, (configMAX_PRIORITIES - 1), &timer_task);
+
+    xTaskCreate(vTaskControlMechanisms, "control mechanisms task", mainGENERIC_STACK_SIZE,
+                NULL, (configMAX_PRIORITIES - 3), &control_task);
 
     vTaskStartScheduler();
 
