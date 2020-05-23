@@ -45,7 +45,6 @@ const unsigned char next_state_signal = NEXT_TASK;
 const unsigned char prev_state_signal = PREV_TASK;
 
 static TaskHandle_t state_machine = NULL;
-static TaskHandle_t buffer_swap = NULL;
 static TaskHandle_t task_frequ1 = NULL;
 static TaskHandle_t task_frequ2 = NULL;
 static TaskHandle_t task3 = NULL;
@@ -55,17 +54,15 @@ static TaskHandle_t control_task = NULL;
 static TaskHandle_t task1_screen2 = NULL;
 static TaskHandle_t terminate_process = NULL;
 
-static QueueHandle_t StateQueue = NULL;
-static QueueHandle_t TerminateQueue = NULL;
-
-static SemaphoreHandle_t DrawSignal = NULL;
 static SemaphoreHandle_t task3_signal = NULL;
 static SemaphoreHandle_t counter_T_lock = NULL;
 static SemaphoreHandle_t counter_F_lock = NULL;
-static SemaphoreHandle_t ScreenLock = NULL;
+static SemaphoreHandle_t ScreenLock1 = NULL;
+static SemaphoreHandle_t ScreenLock2 = NULL;
+static SemaphoreHandle_t state_machine_signal = NULL;
 
 static StaticTask_t xTaskBuffer;
-static StackType_t xStack[mainGENERIC_STACK_SIZE];
+static StackType_t xStack[mainGENERIC_STACK_SIZE * 2];
 
 static int counter_T = 0;
 static int counter_F = 0;
@@ -204,105 +201,53 @@ void vDrawFPS(void)
     tumFontPutFontHandle(cur_font);
 }
 
-
-void vCheckStateInput()
-{   
-    unsigned int terminate_signal = 1; 
-    unsigned int next_state_signal = 0;
-
-    if (xSemaphoreTake(buttons.lock, 0) == pdTRUE) {
-        if (buttons.buttons[KEYCODE(E)]) {
-            buttons.buttons[KEYCODE(E)] = 0;
-            if (StateQueue) {
-                xQueueSend(StateQueue, &next_state_signal, 0);
-            }
-        }
-        if (buttons.buttons[KEYCODE(Q)]) {
-                xQueueSend(TerminateQueue, &terminate_signal, 0);
-                printf("terminate signal sent.");
-            }
-        
-        xSemaphoreGive(buttons.lock);
-    }
-}
-/*
- * Changes the state, either forwards of backwards
- */
-void changeState(volatile unsigned char *state, unsigned char forwards)
-{
-    switch (forwards) {
-        case NEXT_TASK:
-            if (*state == STATE_COUNT - 1) {
-                *state = 0;
-            }
-            else {
-                (*state)++;
-            }
-            break;
-        case PREV_TASK:
-            if (*state == 0) {
-                *state = STATE_COUNT - 1;
-            }
-            else {
-                (*state)--;
-            }
-            break;
-        default:
-            break;
-    }
-}
-
 void vSequential_StateMachine(void *pvParameters)
 {
-    unsigned char current_state = STARTING_STATE; // Default state
-    unsigned char state_changed =
-        1; // Only re-evaluate state if it has changed
-    unsigned char input = 0;
+    // initial suspend of screen 2 and resume of screen 1
+    vTaskSuspend(task1_screen2);
+    vTaskResume(task_frequ1);
+    vTaskResume(task_frequ2);
+    vTaskResume(timer_task);
+    vTaskResume(control_task);
 
-    const int state_change_period = STATE_DEBOUNCE_DELAY;
+    int state = 0;
 
+    const int state_change_period = 1000;
     TickType_t last_change = xTaskGetTickCount();
 
     while(1){
-        if (state_changed) {
-            goto initial_state;
-        }
-
-        // Handle state machine input
-        if (StateQueue)
-            if (xQueueReceive(StateQueue, &input, portMAX_DELAY) ==
-                pdTRUE)
-                if (xTaskGetTickCount() - last_change >
+        if (xSemaphoreTake(state_machine_signal, 
+                            portMAX_DELAY)) {
+            if ((xTaskGetTickCount() - last_change) >
                     state_change_period) {
-                    changeState(&current_state, input);
-                    state_changed = 1;
-                    last_change = xTaskGetTickCount();
+                
+                if (state == 0) {
+                    state = 1;
                 }
-
-initial_state:
-        // Handle current state
-        if (state_changed) {
-            switch (current_state) {
-                case STATE_ONE:  
-                    if (task1_screen2) {
-                        vTaskSuspend(task1_screen2);
-                    }
-                    if (task_frequ1) {
-                        vTaskResume(task_frequ1);
-                    }
-                    break;
-                case STATE_TWO:
-                    if (task_frequ1) {
-                        vTaskSuspend(task_frequ1);
-                    }   
-                    if (task1_screen2) {
-                        vTaskResume(task1_screen2);
-                    }
-                    break;
-                default:
-                    break;
+                else if (state == 1) {
+                    state = 0;
+                }
+                if (state == 0) {
+                    printf("displaying solution for 3.2\n");
+                        // resuming tasks of screen 1
+                    vTaskSuspend(task1_screen2);
+                    vTaskResume(task_frequ2);
+                    vTaskResume(task_frequ1);
+                    vTaskResume(timer_task);
+                    vTaskResume(control_task);
+                    
+                }
+                if (state == 1) {
+                    printf("displaying solution for 3.3\n");
+                        // resuming tasks of screen 2
+                    vTaskSuspend(task_frequ1);
+                    vTaskSuspend(task_frequ2);
+                    vTaskSuspend(timer_task);
+                    vTaskSuspend(control_task);
+                    vTaskResume(task1_screen2);
+                }
+                last_change = xTaskGetTickCount();
             }
-            state_changed = 0;
         }
     }
 }
@@ -310,7 +255,12 @@ initial_state:
 void vTerminateProcess(void *pvParameters) {
     while(1) {
         if(ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
+            vTaskDelete(control_task);
             vTaskDelete(task_frequ1);
+            vTaskDelete(task_frequ2);
+            vTaskDelete(task3);
+            vTaskDelete(task4);
+            vTaskDelete(timer_task);
             vTaskDelete(task1_screen2);
             vTaskDelete(state_machine);
             vTaskDelete(NULL);
@@ -318,6 +268,16 @@ void vTerminateProcess(void *pvParameters) {
     }
 }
 
+void vCheckStateInput()
+{   
+    if (buttons.buttons[KEYCODE(E)]) {
+        xSemaphoreGive(state_machine_signal); 
+          
+    }
+    if (buttons.buttons[KEYCODE(Q)]) {
+        xTaskNotifyGive(terminate_process);
+    }
+}
 
 // Tasks Screen 2 #######################################
 
@@ -329,18 +289,12 @@ void vTask1_screen2(void *pvParameters)
     int change = 0;
 
     while (1) {
-        if(xSemaphoreTake(ScreenLock, 1000) == pdTRUE){
-            for (int counter=0; counter<1000; counter++) {
+        if(xSemaphoreTake(ScreenLock2, 1000) == pdTRUE){
+            for (int counter=0; counter<100; counter++) {
                 tumEventFetchEvents();
                 xGetButtonInput();
+                vCheckStateInput();
 
-                if (xSemaphoreTake(buttons.lock, portMAX_DELAY) == pdTRUE) {
-                    if (buttons.buttons[KEYCODE(Q)]) {
-                        xTaskNotifyGive(terminate_process);
-                    }
-                    xSemaphoreGive(buttons.lock);
-                }
-                
                 if (ticks >= 50){
                     change = 1;
                 }
@@ -364,12 +318,39 @@ void vTask1_screen2(void *pvParameters)
 
                 vTaskDelay(10);
             }
-            xSemaphoreGive(ScreenLock);
-            vTaskDelay(100);
+            xSemaphoreGive(ScreenLock2);
+            
         }
+        vTaskDelay(100);
     }
 }
 
+
+// Tasks Screen 2 end ##################################
+
+void vCheckInput() {
+    if (buttons.buttons[KEYCODE(T)]) {
+        xSemaphoreGive(task3_signal);
+        vTaskDelay(750);
+    }
+    if (buttons.buttons[KEYCODE(F)]) {
+        xTaskNotifyGive(task4);
+        vTaskDelay(750);
+    }
+    if (buttons.buttons[KEYCODE(C)]) {
+        if(eTaskGetState(control_task) == eReady || 
+            eTaskGetState(control_task) == eRunning ||
+            eTaskGetState(control_task) == eBlocked) {
+            vTaskSuspend(control_task);
+        }
+        else
+        {
+            vTaskResume(control_task);
+        }
+        vTaskDelay(750);
+        
+    }
+}
 // Tasks Screen 1 #######################################
 
 void vTask_frequ1(void *pvParameters)
@@ -384,22 +365,16 @@ void vTask_frequ1(void *pvParameters)
    	signed short circle_radius = 50;
 
     unsigned int ticks = 0;
-    int counter = 0;
     short change = 0;
 
     while (1) {
-        if(xSemaphoreTake(ScreenLock, 1000) == pdTRUE) {
-            for(counter=0; counter < 1000; counter++){
+        if(xSemaphoreTake(ScreenLock1, 1000) == pdTRUE) {
+            for(int counter=0; counter < 100; counter++){
                 tumEventFetchEvents();
                 xGetButtonInput();
+                vCheckStateInput();
+                vCheckInput();
                 
-                if (xSemaphoreTake(buttons.lock, portMAX_DELAY) == pdTRUE) {
-                    if (buttons.buttons[KEYCODE(Q)]) {
-                        xTaskNotifyGive(terminate_process);
-                    }
-                    xSemaphoreGive(buttons.lock);
-                }
-
                 if (ticks >= 25){
                     change = 1;
                 }
@@ -425,9 +400,179 @@ void vTask_frequ1(void *pvParameters)
 
                 vTaskDelay(10); // sleep of 10ms
             }
-            xSemaphoreGive(ScreenLock);
+            xSemaphoreGive(ScreenLock1);
         }
         vTaskDelay(100);
+    }
+}
+
+void vTask_frequ2(void *pvParameters)
+{   
+    tumDrawBindThread();
+
+    signed short center_x = SCREEN_WIDTH/2;
+    signed short center_y = SCREEN_HEIGHT/2;
+
+    signed short circle_x = center_x;
+    signed short circle_y = center_y;
+   	signed short circle_radius = 50;
+
+    unsigned int ticks = 0;
+    int counter = 0;
+    short change = 0;
+
+    while (1) {
+        if(xSemaphoreTake(ScreenLock1, 1000) == pdTRUE) {
+            for(counter=0; counter < 100; counter++){
+                tumEventFetchEvents();
+                xGetButtonInput();
+                vCheckStateInput();
+                vCheckInput();
+
+                if (ticks >= 50){
+                    change = 1;
+                }
+                else{
+                    change = 0;
+                }
+                if (ticks == 100){
+                    ticks = 0;
+                }
+
+                if(change){
+                    tumDrawClear(White);
+                }
+                else{
+                    tumDrawClear(White);
+                    tumDrawCircle(circle_x, circle_y, circle_radius,
+                                    TUMBlue);
+                }
+                vDrawFPS();
+
+                tumDrawUpdateScreen(); // Refresh screen 
+                ticks++;
+
+                vTaskDelay(10); // sleep of 10ms
+            }
+            xSemaphoreGive(ScreenLock1);
+        }
+        vTaskDelay(100);
+    }
+}
+
+void vTask3 (void *pvParameters) {
+
+    static char counter_t_str[100];
+    static int counter_t_str_width = 0;
+
+    tumDrawBindThread();
+
+    while(1) {
+        if(xSemaphoreTake(task3_signal, portMAX_DELAY)){
+            if(xSemaphoreTake(counter_T_lock, 0)) {
+                counter_T++;
+                xSemaphoreGive(counter_T_lock);
+            }
+            for (int i=0; i < 10; i++) {
+                tumDrawClear(White);
+                sprintf(counter_t_str, 
+                        "(T) was pressed %i times.", counter_T);
+                
+                if (!tumGetTextSize((char *)counter_t_str,
+                                    &counter_t_str_width, NULL)) {
+                    tumDrawText(counter_t_str,
+                                SCREEN_WIDTH / 2 -
+                                counter_t_str_width / 2,
+                                SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 150,
+                                TUMBlue);
+                }
+                vDrawFPS();
+
+                tumDrawUpdateScreen();
+                vTaskDelay(10);
+            }
+        }
+    }
+}
+
+void vTask4 (void *pvParameters) {
+
+    static char counter_f_str[100];
+    static int counter_f_str_width = 0;
+
+    tumDrawBindThread();
+
+    while(1) {
+        if(ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
+            if(xSemaphoreTake(counter_F_lock, 0)) {
+                counter_F++;
+                xSemaphoreGive(counter_F_lock);
+            }
+            for (int i=0; i < 10; i++) {
+                tumDrawClear(White);
+                sprintf(counter_f_str, 
+                        "(F) was pressed %i times.", counter_F);
+                
+                if (!tumGetTextSize((char *)counter_f_str,
+                                    &counter_f_str_width, NULL)) {
+                    tumDrawText(counter_f_str,
+                                SCREEN_WIDTH / 2 -
+                                counter_f_str_width / 2,
+                                SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 + 175,
+                                TUMBlue);
+                }
+                vDrawFPS();
+
+                tumDrawUpdateScreen();
+                vTaskDelay(10);
+            }
+        }
+    }
+}
+
+void vTimerCallbackReset( TimerHandle_t xTimer )
+{
+    if (xTimerReset(xTimer, 0) == pdPASS){
+        xTaskNotifyGive(timer_task);
+    }
+    else{
+        printf("failed to reset timer.");
+    }
+}
+
+void vResetCounterTask (void *pvParameter) {
+    
+    while(1) {
+        if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)){
+            // reset variables
+            if(xSemaphoreTake(counter_T_lock, 0)){
+                counter_T = 0;
+                printf("T reset done.\n");
+                xSemaphoreGive(counter_T_lock);
+            }
+            if(xSemaphoreTake(counter_F_lock, 0)){
+                counter_F = 0;
+                printf("F reset done.\n");
+                xSemaphoreGive(counter_F_lock);
+            }
+        }
+
+    }
+}
+
+void vTaskControlMechanisms (void *pvParameter) {
+    
+    int counter = 0;
+    int ticks = 0;
+
+    while(1) {
+        ticks++;
+        if(ticks == 100) {
+            counter++;
+            ticks = 0;
+            printf("counter:%i\n", counter);
+        }
+        vTaskDelay(10);
     }
 }
 
@@ -464,28 +609,55 @@ int main(int argc, char *argv[])
         goto err_buttons_lock;
     }
     
-    ScreenLock = xSemaphoreCreateMutex();
+    ScreenLock1 = xSemaphoreCreateMutex(); // lock for screen 1
+    ScreenLock2 = xSemaphoreCreateMutex(); // lock for screen 2
 
+    // signal for triggering state machine.
+    state_machine_signal = xSemaphoreCreateBinary();
 
-    // Queues for communicating with State Machine
-    StateQueue = xQueueCreate(STATE_QUEUE_LENGTH, sizeof(unsigned char));
-    TerminateQueue = xQueueCreate(STATE_QUEUE_LENGTH, sizeof(unsigned int));
+    task3_signal = xSemaphoreCreateBinary();
+
+    counter_T_lock = xSemaphoreCreateMutex();
+    counter_F_lock = xSemaphoreCreateMutex();
+
+    xResetTimer = xTimerCreate("timer", pdMS_TO_TICKS(15000), pdTRUE, 
+                                (void*) 0, vTimerCallbackReset);
+    xTimerStart(xResetTimer, 0);
 
     // Task Creation ##############################
 
     xTaskCreate(vTerminateProcess, "", 
                 mainGENERIC_STACK_SIZE * 2,
-                NULL, configMAX_PRIORITIES, &terminate_process);
+                NULL, (configMAX_PRIORITIES - 1), &terminate_process);
 
     xTaskCreate(vSequential_StateMachine, "state machine", 
                 mainGENERIC_STACK_SIZE * 2,
-                NULL, (configMAX_PRIORITIES - 1), state_machine);
+                NULL, (configMAX_PRIORITIES - 1), &state_machine);
 
-    xTaskCreate(vTask_frequ1, "Draw Circle with 1Hz", 
+    xTaskCreate(vTask_frequ1, "", 
                 mainGENERIC_STACK_SIZE * 2, 
-                NULL, mainGENERIC_PRIORITY, &task_frequ1);
+                NULL, mainGENERIC_PRIORITY + 2, &task_frequ1);
 
-    xTaskCreate(vTask1_screen2, "first task on new screen", 
+    task_frequ2 = xTaskCreateStatic(vTask_frequ2, "",
+                                    mainGENERIC_STACK_SIZE * 2,
+                                    NULL, (mainGENERIC_PRIORITY + 3),
+                                    xStack, &xTaskBuffer);
+
+    xTaskCreate(vTask3, "", mainGENERIC_STACK_SIZE * 2,
+                NULL, (mainGENERIC_PRIORITY + 1), &task3);
+
+    xTaskCreate(vTask4, "", mainGENERIC_STACK_SIZE * 2,
+                NULL, (mainGENERIC_PRIORITY + 1), &task4);
+
+    xTaskCreate(vResetCounterTask, "Reset Counters", 
+                mainGENERIC_STACK_SIZE * 2,
+                NULL, (mainGENERIC_PRIORITY + 1), &timer_task);
+
+    xTaskCreate(vTaskControlMechanisms, "",
+                mainGENERIC_STACK_SIZE * 2,
+                NULL, (mainGENERIC_PRIORITY + 1), &control_task);
+
+    xTaskCreate(vTask1_screen2, "", 
                 mainGENERIC_STACK_SIZE * 2,
                 NULL, mainGENERIC_PRIORITY, &task1_screen2);
 
@@ -495,8 +667,6 @@ int main(int argc, char *argv[])
 
     return EXIT_SUCCESS;
 
-err_task_frequ1:
-    vSemaphoreDelete(buttons.lock);
 err_buttons_lock:
     tumSoundExit();
 err_init_audio:
