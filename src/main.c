@@ -45,27 +45,40 @@ const unsigned char next_state_signal = NEXT_TASK;
 const unsigned char prev_state_signal = PREV_TASK;
 
 static TaskHandle_t state_machine = NULL;
+static TaskHandle_t terminate_process = NULL;
+
 static TaskHandle_t task_frequ1 = NULL;
 static TaskHandle_t task_frequ2 = NULL;
 static TaskHandle_t task3 = NULL;
 static TaskHandle_t task4 = NULL;
 static TaskHandle_t timer_task = NULL;
 static TaskHandle_t control_task = NULL;
+
 static TaskHandle_t task1_screen2 = NULL;
-static TaskHandle_t terminate_process = NULL;
+static TaskHandle_t task2_screen2 = NULL;
+static TaskHandle_t task3_screen2 = NULL;
+static TaskHandle_t task4_screen2 = NULL;
+static TaskHandle_t output_task_screen2 = NULL;
 
 static SemaphoreHandle_t task3_signal = NULL;
+static SemaphoreHandle_t task3_screen2_signal = NULL;
 static SemaphoreHandle_t counter_T_lock = NULL;
 static SemaphoreHandle_t counter_F_lock = NULL;
 static SemaphoreHandle_t ScreenLock1 = NULL;
 static SemaphoreHandle_t ScreenLock2 = NULL;
 static SemaphoreHandle_t state_machine_signal = NULL;
 
+static QueueHandle_t task1_screen2_qu = NULL;
+static QueueHandle_t task2_screen2_qu = NULL;
+static QueueHandle_t task3_screen2_qu = NULL;
+static QueueHandle_t task4_screen2_qu = NULL;
+
 static StaticTask_t xTaskBuffer;
 static StackType_t xStack[mainGENERIC_STACK_SIZE * 2];
 
 static int counter_T = 0;
 static int counter_F = 0;
+
 
 TimerHandle_t xResetTimer = NULL;
 
@@ -203,12 +216,12 @@ void vDrawFPS(void)
 
 void vSequential_StateMachine(void *pvParameters)
 {
-    // initial suspend of screen 2 and resume of screen 1
+    // initial suspend of screen 2
     vTaskSuspend(task1_screen2);
-    vTaskResume(task_frequ1);
-    vTaskResume(task_frequ2);
-    vTaskResume(timer_task);
-    vTaskResume(control_task);
+    vTaskSuspend(task2_screen2);
+    vTaskSuspend(task3_screen2);
+    vTaskSuspend(task4_screen2);
+    vTaskSuspend(output_task_screen2);
 
     int state = 0;
 
@@ -231,20 +244,30 @@ void vSequential_StateMachine(void *pvParameters)
                     printf("displaying solution for 3.2\n");
                         // resuming tasks of screen 1
                     vTaskSuspend(task1_screen2);
+                    vTaskSuspend(task2_screen2);
+                    vTaskSuspend(task3_screen2);
+                    vTaskSuspend(task4_screen2);
+                    vTaskSuspend(output_task_screen2);
                     vTaskResume(task_frequ2);
                     vTaskResume(task_frequ1);
                     vTaskResume(timer_task);
                     vTaskResume(control_task);
+                    xTimerStart(xResetTimer, 0);
                     
                 }
                 if (state == 1) {
                     printf("displaying solution for 3.3\n");
                         // resuming tasks of screen 2
-                    vTaskSuspend(task_frequ1);
-                    vTaskSuspend(task_frequ2);
                     vTaskSuspend(timer_task);
                     vTaskSuspend(control_task);
+                    vTaskSuspend(task_frequ1);
+                    vTaskSuspend(task_frequ2);
+                    xTimerStop(xResetTimer, 0);
                     vTaskResume(task1_screen2);
+                    vTaskResume(task2_screen2);
+                    vTaskResume(task3_screen2);
+                    vTaskResume(task4_screen2);
+                    vTaskResume(output_task_screen2);
                 }
                 last_change = xTaskGetTickCount();
             }
@@ -261,8 +284,15 @@ void vTerminateProcess(void *pvParameters) {
             vTaskDelete(task3);
             vTaskDelete(task4);
             vTaskDelete(timer_task);
+
             vTaskDelete(task1_screen2);
+            vTaskDelete(task2_screen2);
+            vTaskDelete(task3_screen2);
+            vTaskDelete(task4_screen2);
+            vTaskDelete(output_task_screen2);
+
             vTaskDelete(state_machine);
+
             vTaskDelete(NULL);
         }
     }
@@ -283,48 +313,180 @@ void vCheckStateInput()
 
 void vTask1_screen2(void *pvParameters) 
 {
-    tumDrawBindThread();
+    TickType_t xLastWakeTime;    
+    const TickType_t xFrequency = 1;
+
+    static char task1_output = '1';
 
     int ticks = 0;
-    int change = 0;
+
+    xLastWakeTime = xTaskGetTickCount();
 
     while (1) {
-        if(xSemaphoreTake(ScreenLock2, 1000) == pdTRUE){
-            for (int counter=0; counter<100; counter++) {
+
+        if (ticks >= 14) {
+            printf("exiting.. task 1\n");
+            vTaskSuspend(NULL);
+        }
+        xQueueSend(task1_screen2_qu, &task1_output, 0);
+
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        ticks++;
+    }
+}
+
+void vTask2_screen2 (void *pvParameters) 
+{
+    TickType_t xLastWakeTime;
+    const TickType_t xFrequency = 2;
+
+    static char task2_output = '2';
+
+    int ticks = 0;
+
+    xLastWakeTime = xTaskGetTickCount();
+
+    while (1) {
+
+        if (ticks >= 14) {
+            printf("exiting.. task 2 and 3\n");
+            vTaskSuspend(task3_screen2);
+            vTaskSuspend(NULL);
+        }
+
+        xQueueSend(task2_screen2_qu, &task2_output, 0);
+        
+        xSemaphoreGive(task3_screen2_signal);
+        
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        ticks = ticks + 2;
+    }
+
+}
+
+void vTask3_screen2 (void *pvParameters)
+{   
+    static char task3_output = '3';
+
+    while (1) {
+        if(xSemaphoreTake(task3_screen2_signal, portMAX_DELAY)){
+            xQueueSend(task3_screen2_qu, &task3_output, 0);
+        }
+    }
+}
+
+void vTask4_screen2 (void *pvParameters)
+{
+    TickType_t xLastWakeTime;
+    xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = 4;
+
+    static char task4_output = '4';
+
+    int ticks = 0;
+
+    while (1) {
+        
+        if (ticks >= 14) {
+            printf("exiting.. task 4\n");   
+            vTaskSuspend(NULL);
+        }
+
+        xQueueSend(task4_screen2_qu, &task4_output, 0);
+
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        ticks = ticks + 4;
+    }
+}
+
+void vOutputTask_screen2 (void *pvParameters) 
+{
+    // terminate other 4 tasks after 15 ticks.
+    // output array of all numbers
+
+    static char task_output[15][4];
+
+    static char task_output_buffer[100];
+
+    static char task1_buffer;
+    static char task2_buffer;
+    static char task3_buffer;
+    static char task4_buffer;
+
+    int output_str_width = 0;
+    int y_coord = 0;
+
+    int checked = 0;
+
+    while(1) {
+        if(!checked) {
+            for(int tick=0; tick < 15; tick++) {
+                if(xQueueReceive(task1_screen2_qu, &task1_buffer, 0)) {
+                    task_output[tick][0] = task1_buffer;
+                }
+                else {
+                    task_output[tick][0] = '.';
+                }
+                if(xQueueReceive(task2_screen2_qu, &task2_buffer, 0)) {
+                    task_output[tick][1] = task2_buffer;
+                }
+                else {
+                    task_output[tick][1] = '.';
+                }
+                if(xQueueReceive(task3_screen2_qu, &task3_buffer, 0)) {
+                    task_output[tick][2] = task3_buffer;
+                }
+                else {
+                    task_output[tick][2] = '.';
+                }
+                if(xQueueReceive(task4_screen2_qu, &task4_buffer, 0)) {
+                    task_output[tick][3] = task4_buffer;
+                }
+                else {
+                    task_output[tick][3] = '.';
+                }
+                vTaskDelay(1); // delaying task to be in frequence with other tasks
+            }
+            checked = 1;
+        }
+
+        if(xSemaphoreTake(ScreenLock2, 1000) == pdTRUE) {
+            tumDrawBindThread();
+            
+            for(int i = 0; i<1000; i++) {
                 tumEventFetchEvents();
                 xGetButtonInput();
                 vCheckStateInput();
 
-                if (ticks >= 50){
-                    change = 1;
+                tumDrawClear(White);
+
+                y_coord = SCREEN_HEIGHT / 2 - DEFAULT_FONT_SIZE / 2 - 100;
+
+                for (int row=0; row<15; row++) {
+                    sprintf(task_output_buffer, 
+                            "Tick %i   : %c  %c  %c  %c", 
+                            row, task_output[row][0],
+                            task_output[row][1],
+                            task_output[row][2],
+                            task_output[row][3]);
+                    tumGetTextSize(task_output_buffer,
+                                    &output_str_width, NULL);
+                    tumDrawText(task_output_buffer, 
+                                SCREEN_WIDTH / 2 - 50,
+                                y_coord, TUMBlue);
+                    y_coord = y_coord + 20;
                 }
-                else{
-                    change = 0;
-                }
-                if (ticks == 100){
-                    ticks = 0;
-                }
-                if(change){
-                    tumDrawClear(White);
-                }
-                else{
-                    tumDrawClear(Black);
-                }
+            
                 vDrawFPS();
-
-                tumDrawUpdateScreen(); // Refresh screen 
-
-                ticks++;
-
+                
+                tumDrawUpdateScreen(); 
                 vTaskDelay(10);
             }
             xSemaphoreGive(ScreenLock2);
-            
+            vTaskDelay(100);
         }
-        vTaskDelay(100);
     }
 }
-
 
 // Tasks Screen 2 end ##################################
 
@@ -355,8 +517,6 @@ void vCheckInput() {
 
 void vTask_frequ1(void *pvParameters)
 {   
-    tumDrawBindThread();
-
     signed short center_x = SCREEN_WIDTH/2;
     signed short center_y = SCREEN_HEIGHT/2;
 
@@ -369,6 +529,7 @@ void vTask_frequ1(void *pvParameters)
 
     while (1) {
         if(xSemaphoreTake(ScreenLock1, 1000) == pdTRUE) {
+            tumDrawBindThread();
             for(int counter=0; counter < 100; counter++){
                 tumEventFetchEvents();
                 xGetButtonInput();
@@ -408,8 +569,6 @@ void vTask_frequ1(void *pvParameters)
 
 void vTask_frequ2(void *pvParameters)
 {   
-    tumDrawBindThread();
-
     signed short center_x = SCREEN_WIDTH/2;
     signed short center_y = SCREEN_HEIGHT/2;
 
@@ -423,6 +582,7 @@ void vTask_frequ2(void *pvParameters)
 
     while (1) {
         if(xSemaphoreTake(ScreenLock1, 1000) == pdTRUE) {
+            tumDrawBindThread();
             for(counter=0; counter < 100; counter++){
                 tumEventFetchEvents();
                 xGetButtonInput();
@@ -465,10 +625,9 @@ void vTask3 (void *pvParameters) {
     static char counter_t_str[100];
     static int counter_t_str_width = 0;
 
-    tumDrawBindThread();
-
     while(1) {
         if(xSemaphoreTake(task3_signal, portMAX_DELAY)){
+            tumDrawBindThread();
             if(xSemaphoreTake(counter_T_lock, 0)) {
                 counter_T++;
                 xSemaphoreGive(counter_T_lock);
@@ -500,10 +659,9 @@ void vTask4 (void *pvParameters) {
     static char counter_f_str[100];
     static int counter_f_str_width = 0;
 
-    tumDrawBindThread();
-
     while(1) {
         if(ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
+            tumDrawBindThread();
             if(xSemaphoreTake(counter_F_lock, 0)) {
                 counter_F++;
                 xSemaphoreGive(counter_F_lock);
@@ -601,8 +759,8 @@ int main(int argc, char *argv[])
         goto err_init_audio;
     }
 
-    // creation of semaphores 
     // locking mechanism for buttons
+    // shared resource -> mutex
     buttons.lock = xSemaphoreCreateMutex(); 
     if (!buttons.lock) {
         PRINT_ERROR("Failed to create buttons lock");
@@ -610,19 +768,35 @@ int main(int argc, char *argv[])
     }
     
     ScreenLock1 = xSemaphoreCreateMutex(); // lock for screen 1
-    ScreenLock2 = xSemaphoreCreateMutex(); // lock for screen 2
-
-    // signal for triggering state machine.
+    
+    // signal to trigger state machine.
+    // trigger with (E) to switch between states
     state_machine_signal = xSemaphoreCreateBinary();
 
+    // signal to trigger task3 
+    // trigger with (T)
     task3_signal = xSemaphoreCreateBinary();
 
+    // mutexes to secure incrementing and resetting of counter vars
     counter_T_lock = xSemaphoreCreateMutex();
     counter_F_lock = xSemaphoreCreateMutex();
 
+    // timer to reset counters for (T) and (F)
     xResetTimer = xTimerCreate("timer", pdMS_TO_TICKS(15000), pdTRUE, 
                                 (void*) 0, vTimerCallbackReset);
-    xTimerStart(xResetTimer, 0);
+    xTimerStart(xResetTimer, 0);    // starts when scheduler starts
+
+
+    ScreenLock2 = xSemaphoreCreateMutex(); // lock for screen 2
+
+    // signal to trigger task3 on screen 2 
+    task3_screen2_signal = xSemaphoreCreateBinary();
+
+    // queues to transmit char array to output process
+    task1_screen2_qu = xQueueCreate(10, sizeof(char));
+    task2_screen2_qu = xQueueCreate(10, sizeof(char));
+    task3_screen2_qu = xQueueCreate(10, sizeof(char));
+    task4_screen2_qu = xQueueCreate(10, sizeof(char));
 
     // Task Creation ##############################
 
@@ -634,6 +808,7 @@ int main(int argc, char *argv[])
                 mainGENERIC_STACK_SIZE * 2,
                 NULL, (configMAX_PRIORITIES - 1), &state_machine);
 
+    // Screen 1 Tasks
     xTaskCreate(vTask_frequ1, "", 
                 mainGENERIC_STACK_SIZE * 2, 
                 NULL, mainGENERIC_PRIORITY + 2, &task_frequ1);
@@ -657,9 +832,27 @@ int main(int argc, char *argv[])
                 mainGENERIC_STACK_SIZE * 2,
                 NULL, (mainGENERIC_PRIORITY + 1), &control_task);
 
+    // Screen 2 Tasks
     xTaskCreate(vTask1_screen2, "", 
                 mainGENERIC_STACK_SIZE * 2,
-                NULL, mainGENERIC_PRIORITY, &task1_screen2);
+                NULL, mainGENERIC_PRIORITY + 4, &task1_screen2);
+
+    xTaskCreate(vTask2_screen2, "", 
+                mainGENERIC_STACK_SIZE * 2,
+                NULL, mainGENERIC_PRIORITY + 3, &task2_screen2);
+
+    xTaskCreate(vTask3_screen2, "", 
+                mainGENERIC_STACK_SIZE * 2,
+                NULL, mainGENERIC_PRIORITY + 2, &task3_screen2);
+
+    xTaskCreate(vTask4_screen2, "", 
+                mainGENERIC_STACK_SIZE * 2,
+                NULL, mainGENERIC_PRIORITY + 1, &task4_screen2);
+
+    xTaskCreate(vOutputTask_screen2, "", 
+                mainGENERIC_STACK_SIZE * 2,
+                NULL, mainGENERIC_PRIORITY + 5, &output_task_screen2);
+
 
     // End of Task Creation #########################
 
