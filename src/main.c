@@ -437,7 +437,7 @@ void vdrawFigures(void *pvParameters)
         if(xSemaphoreTake(ScreenLock0, portMAX_DELAY) 
             == pdTRUE) { 
             tumDrawBindThread();
-            for (int counter=0; counter<100; counter++) {
+            for (int counter=0; counter<10000; counter++) {
                 tumEventFetchEvents();
                 xGetButtonInput(); // Update global input
 
@@ -938,7 +938,7 @@ void vTask_frequ1(void *pvParameters)
     while (1) {
         if(xSemaphoreTake(ScreenLock1, 1000) == pdTRUE) {
             tumDrawBindThread();
-            for(int counter=0; counter < 100; counter++){
+            for(int counter=0; counter < 300; counter++){
                 tumEventFetchEvents();
                 xGetButtonInput();
                 vCheckStateInput();
@@ -970,8 +970,8 @@ void vTask_frequ1(void *pvParameters)
                 vTaskDelay(10); // sleep of 10ms
             }
             xSemaphoreGive(ScreenLock1);
+            vTaskDelay(100);
         }
-        vTaskDelay(100);
     }
 }
 
@@ -991,7 +991,7 @@ void vTask_frequ2(void *pvParameters)
     while (1) {
         if(xSemaphoreTake(ScreenLock1, 1000) == pdTRUE) {
             tumDrawBindThread();
-            for(counter=0; counter < 100; counter++){
+            for(counter=0; counter < 300; counter++){
                 tumEventFetchEvents();
                 xGetButtonInput();
                 vCheckStateInput();
@@ -1023,8 +1023,8 @@ void vTask_frequ2(void *pvParameters)
                 vTaskDelay(10); // sleep of 10ms
             }
             xSemaphoreGive(ScreenLock1);
+            vTaskDelay(100);
         }
-        vTaskDelay(100);
     }
 }
 
